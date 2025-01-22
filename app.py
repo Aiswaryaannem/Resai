@@ -76,7 +76,7 @@ def save_docx_content(original_docx_file, updated_content):
         return None
 
 # Streamlit app interface
-st.title("ATS-Friendly Resume Enhancer")
+st.title("RESAI")
 st.text("Upload your DOCX resume and paste the job description to generate a clean, ATS-optimized resume.")
 
 # Upload DOCX resume file
