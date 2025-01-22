@@ -1,84 +1,122 @@
 import streamlit as st
-import google.generativeai as genai
-import os
-import PyPDF2 as pdf
-from dotenv import load_dotenv
+import openai
+from docx import Document
 
-# Load environment variables
-load_dotenv()
+# Configure OpenAI API Key
+openai.api_key = 'sk-jJEP5FWSHXkU2V3livED4-tqeILbHajtrS6B6EKrGuT3BlbkFJ5GFHFqw_0MtqKzoLOD7gMhG4TTaKfA1ENm3_2KjJsA'
 
-# Configure the GenAI API
-if os.getenv("GOOGLE_API_KEY"):
-    genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-else:
-    st.error("API key is missing. Please check your environment variables.")
+if not openai.api_key:
+    st.error("API key is missing. Please check your configuration.")
 
-# Function to generate response using Gemini Pro
-def get_gemini_pro_response(input_text):
+# Function to extract text from DOCX
+def extract_docx_content(docx_file):
+    """
+    Extracts text from a DOCX file while preserving the original formatting.
+    """
     try:
-        response = genai.generate_text(
-            model="gemini-pro",
-            prompt=input_text
+        doc = Document(docx_file)
+        sections = [{"text": para.text, "style": para.style} for para in doc.paragraphs]
+        return sections
+    except Exception as e:
+        st.error(f"Error extracting text from DOCX: {e}")
+        return None
+
+# Function to enhance resume content
+def enhance_resume_content(current_sections, job_description):
+    """
+    Enhances resume content section by section based on the job description.
+    """
+    try:
+        current_text = "\n".join([section["text"] for section in current_sections if section["text"].strip()])
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are a professional resume writer and ATS optimization expert. "
+                        "Rewrite the provided resume to align perfectly with the job description. "
+                        "Ensure it includes relevant skills, keywords, and experiences while retaining its original format. "
+                        "The resume must be ATS-friendly and free of gaps."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Resume:\n{current_text}\n\nJob Description:\n{job_description}",
+                },
+            ],
+            max_tokens=3000,
         )
-        return response.text
+        return response["choices"][0]["message"]["content"]
     except Exception as e:
-        st.error(f"Failed to generate response: {e}")
+        st.error(f"Error enhancing resume content: {e}")
         return None
 
-# Function to extract text from uploaded PDF
-def input_pdf_text(uploaded_file):
+# Function to save enhanced content back to the DOCX
+def save_docx_content(original_docx_file, updated_content):
+    """
+    Saves the enhanced resume content back into the original DOCX file while retaining formatting.
+    """
     try:
-        reader = pdf.PdfReader(uploaded_file)
-        text = ""
-        for page in reader.pages:
-            text += str(page.extract_text())
-        return text
+        doc = Document(original_docx_file)
+        updated_paragraphs = updated_content.split("\n")
+
+        para_index = 0
+        for para in doc.paragraphs:
+            if para.text.strip() and para_index < len(updated_paragraphs):
+                para.text = updated_paragraphs[para_index]
+                para_index += 1
+
+        # Save the enhanced resume
+        filename = "Enhanced_Resume_Clean.docx"
+        doc.save(filename)
+        return filename
     except Exception as e:
-        st.error(f"Error processing the PDF file: {e}")
+        st.error(f"Error saving enhanced resume: {e}")
         return None
 
-# Input prompt template
-input_prompt = """
-Hey Act Like a skilled or very experienced ATS(Application Tracking System)
-with a deep understanding of tech field, software engineering, data science,
-data analyst, and AI engineer. Your task is to evaluate the resume based on 
-the given job description. You must consider the job market is very competitive 
-and you should provide the best assistance for improving the resumes. Assign 
-the percentage Matching based on Job description and the missing keywords with 
-high accuracy.
-resume: {text}
-description: {job_description}
+# Streamlit app interface
+st.title("ATS-Friendly Resume Enhancer")
+st.text("Upload your DOCX resume and paste the job description to generate a clean, ATS-optimized resume.")
 
-I want the response in one single string having the structure:
-{{"JD Match":"%","MissingKeywords:[]","Profile Summary":""}}
-"""
+# Upload DOCX resume file
+uploaded_file = st.file_uploader("Upload Your Resume (DOCX)", type=["docx"], help="Upload your Word resume in DOCX format.")
 
-# Streamlit app
-st.title("Smart ATS")
-st.text("Improve Your Resume ATS Score")
-job_description = st.text_area("Paste the Job Description", help="Enter the job description for which the resume will be evaluated.")
-uploaded_file = st.file_uploader("Upload Your Resume", type="pdf", help="Please upload the resume in PDF format.")
+# Input job description
+job_description = st.text_area("Paste the Job Description", help="Enter the job description for the role you are applying for.")
 
 # Submit button
-submit = st.button("Submit")
-
-if submit:
-    # Validate inputs
-    if not job_description:
+if st.button("Enhance Resume"):
+    if not uploaded_file:
+        st.warning("Please upload your current resume.")
+    elif not job_description:
         st.warning("Please paste the job description.")
-    elif uploaded_file is None:
-        st.warning("Please upload a resume in PDF format.")
     else:
-        # Process resume text
-        text = input_pdf_text(uploaded_file)
-        if text:
-            # Generate the prompt
-            prompt = input_prompt.format(text=text, job_description=job_description)
-            # Get response from Gemini Pro
-            response = get_gemini_pro_response(prompt)
-            if response:
-                st.subheader("ATS Evaluation Result:")
-                try:
-                    st.json(eval(response))  # Convert response string to JSON and display
-                except Exception as e:
-                    st.error(f"Error parsing the response: {e}")
+        st.info("Extracting content from the uploaded resume...")
+        current_sections = extract_docx_content(uploaded_file)
+
+        if current_sections:
+            st.success("Resume content extracted successfully.")
+            st.info("Enhancing resume content based on the job description...")
+            enhanced_content = enhance_resume_content(current_sections, job_description)
+
+            if enhanced_content:
+                st.success("Resume enhanced successfully!")
+                st.info("Saving enhanced resume...")
+                enhanced_docx_file = save_docx_content(uploaded_file, enhanced_content)
+
+                if enhanced_docx_file:
+                    st.success("Enhanced resume saved as DOCX.")
+                    with open(enhanced_docx_file, "rb") as file:
+                        st.download_button(
+                            "Download Enhanced Resume (DOCX)",
+                            file,
+                            file_name="Enhanced_Resume_Clean.docx",
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        )
+                else:
+                    st.error("Failed to save enhanced resume. Please try again.")
+            else:
+                st.error("Failed to enhance resume content. Please try again.")
+        else:
+            st.error("Failed to extract content from the resume. Please ensure the file is a valid DOCX format.")
