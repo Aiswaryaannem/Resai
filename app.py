@@ -3,7 +3,7 @@ import openai
 from docx import Document
 
 # Configure OpenAI API Key
-openai.api_key = 'sk-jJEP5FWSHXkU2V3livED4-tqeILbHajtrS6B6EKrGuT3BlbkFJ5GFHFqw_0MtqKzoLOD7gMhG4TTaKfA1ENm3_2KjJsA'
+openai.api_key = YOUR KEY'
 
 if not openai.api_key:
     st.error("API key is missing. Please check your configuration.")
